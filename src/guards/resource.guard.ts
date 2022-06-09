@@ -23,6 +23,7 @@ import { META_RESOURCE } from '../decorators/resource.decorator'
 import { META_FETCH_RESOURCES } from '../decorators/fetch.resources.decorator'
 import { META_PUBLIC } from '../decorators/public.decorator'
 import { PriviledgedRequest } from '../@types/request'
+import { extractRequest } from '../utils/extract-request'
 
 @Injectable()
 export class ResourceGuard implements CanActivate {
@@ -31,12 +32,9 @@ export class ResourceGuard implements CanActivate {
   constructor(
     @Inject(KeycloakService)
     private keycloak: KeycloakService,
+    @Inject(Reflector.name)
     private readonly reflector: Reflector
   ) {}
-
-  getRequest(context: ExecutionContext): any {
-    return context.switchToHttp().getRequest()
-  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.get<boolean>(META_PUBLIC, context.getHandler())
@@ -46,7 +44,7 @@ export class ResourceGuard implements CanActivate {
       return true
     }
 
-    const request = this.getRequest(context)
+    const request = extractRequest(context)
 
     const resourceType = this.reflector.get<string>(META_RESOURCE, context.getClass())
 
@@ -100,8 +98,8 @@ export class ResourceGuard implements CanActivate {
       const response = await this.keycloak.permissionManager.requestTicket({
         token: request.accessToken as string,
         audience: this.keycloak.options.clientId,
-        resourceId,
-        scope: scope ? `${resourceType}:${scope}` : undefined,
+        resourceId: resourceId || resourceType,
+        scope: scope ? `${scope}` : undefined,
         response_mode: resourceHandler
           ? TicketResponseMode.permissions
           : TicketResponseMode.decision,
@@ -113,6 +111,7 @@ export class ResourceGuard implements CanActivate {
       }
 
       const [{ scopes, rsid }] = response as TicketPermissionResponse[]
+
       request.scopes = scopes
       request.resource = await this.keycloak.resourceManager.findById(rsid)
       return true
